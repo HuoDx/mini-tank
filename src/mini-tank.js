@@ -85,11 +85,11 @@ class TankControl extends Scene {
         this.new_line();
         this.key_triggered_button("Forward", ["w"], () => this.thrust = 1, undefined, () => this.thrust = 0);
         this.key_triggered_button("Left", ["a"], () => this.rotation = 1, undefined, () => this.rotation = 0);
-        this.key_triggered_button("Back", ["s"], () => this.thrust = -1, undefined, () => this.thrust = 0);
+        this.key_triggered_button("Back", ["s"], () => this.thrust = -0.4, undefined, () => this.thrust = 0);
         this.key_triggered_button("Right", ["d"], () => this.rotation = -1, undefined, () => this.rotation = 0);
         this.new_line();
-        this.key_triggered_button("Left Rotate Turret", ["q"], () => this.turretRotation = -1, undefined, () => this.turretRotation = 0);
-        this.key_triggered_button("Right Rotate Turret", ["e"], () => this.turretRotation = 1, undefined, () => this.turretRotation = 0);
+        this.key_triggered_button("Left Rotate Turret", [","], () => this.turretRotation = 1, undefined, () => this.turretRotation = 0);
+        this.key_triggered_button("Right Rotate Turret", ["."], () => this.turretRotation = -1, undefined, () => this.turretRotation = 0);
         this.new_line();
         //this.key_triggered_button("(Un)freeze mouse look around", [" "], () => this.look_around_locked ^= 1, "#8B8885");
     }
@@ -191,7 +191,7 @@ export class MiniTankGame extends ShadowCastingScene {
                 .times(this.modelAdjustment)
                 .times(Mat4.scale(1.5, 1.5, 1.5))
                 .times(this.turretRotation)
-                .times(Mat4.translation(0, 0.5, -1.5)),
+                .times(Mat4.translation(0, 0.5, -1.8)),
             shadow_pass ? this.tank : this.pure);
         this.shapes.tankBody.draw(context, program_state,
             tank_transform
@@ -213,11 +213,7 @@ export class MiniTankGame extends ShadowCastingScene {
         let tankPositionMatrix = this.tankTransform.times(vec4(0, 0, 0, 1));
         // camera follow
         let desired = Mat4.inverse(
-            Mat4.translation(
-                tankPositionMatrix[0],
-                tankPositionMatrix[1],
-                tankPositionMatrix[2]
-            )
+            this.tankTransform
             .times(this.turretRotation)
             .times(Mat4.translation(0,15,25))
             .times(Mat4.rotation(-Math.PI/6,1,0,0)));
