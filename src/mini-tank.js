@@ -1,35 +1,36 @@
-import {defs, tiny} from '../examples/common.js';
+import { defs, tiny } from '../examples/common.js';
 // Pull these names into this module's scope for convenience:
 const {
     hex_color,
     Vector,
     vec3,
-    vec4, 
+    vec4,
     vec,
-    color, 
-    Matrix, 
-    Mat4, 
-    Light, 
-    Shape, 
-    Material, 
-    Shader, 
-    Texture, 
-    Scene} = tiny;
+    color,
+    Matrix,
+    Mat4,
+    Light,
+    Shape,
+    Material,
+    Shader,
+    Texture,
+    Scene } = tiny;
 const {
-    Cube, 
-    Axis_Arrows, 
-    Textured_Phong, 
-    Phong_Shader, 
-    Basic_Shader, 
-    Subdivision_Sphere} = defs;
-import {Shape_From_File} from '../examples/obj-file-demo.js';
+    Cube,
+    Axis_Arrows,
+    Textured_Phong,
+    Phong_Shader,
+    Basic_Shader,
+    Subdivision_Sphere } = defs;
+import { Shape_From_File } from '../examples/obj-file-demo.js';
 
 import {
-    Color_Phong_Shader, 
+    Color_Phong_Shader,
     Shadow_Textured_Phong_Shader,
-    Depth_Texture_Shader_2D, 
-    Buffered_Texture, 
-    LIGHT_DEPTH_TEX_SIZE} from '../examples/shadow-demo-shaders.js';
+    Depth_Texture_Shader_2D,
+    Buffered_Texture,
+    LIGHT_DEPTH_TEX_SIZE
+} from '../examples/shadow-demo-shaders.js';
 
 import { ShadowCastingScene } from './shadow-casting-scene.js';
 
@@ -77,22 +78,26 @@ class TankControl extends Scene {
         // make_control_panel(): Sets up a panel of interactive HTML elements, including
         // buttons with key bindings for affecting this scene, and live info readouts.
         this.control_panel.innerHTML += "WASD to move the tank";
-        this.thrust = 0; this.rotation = 0;
-        
+        this.thrust = 0; this.rotation = 0; this.turretRotation = 0;
+
         this.new_line();
 
         this.new_line();
-        this.key_triggered_button("Forward", ["w"], () => this.thrust = 1 , undefined, () => this.thrust = 0);
+        this.key_triggered_button("Forward", ["w"], () => this.thrust = 1, undefined, () => this.thrust = 0);
         this.key_triggered_button("Left", ["a"], () => this.rotation = 1, undefined, () => this.rotation = 0);
         this.key_triggered_button("Back", ["s"], () => this.thrust = -1, undefined, () => this.thrust = 0);
         this.key_triggered_button("Right", ["d"], () => this.rotation = -1, undefined, () => this.rotation = 0);
         this.new_line();
+        this.key_triggered_button("Left Rotate Turret", ["q"], () => this.turretRotation = -1, undefined, () => this.turretRotation = 0);
+        this.key_triggered_button("Right Rotate Turret", ["e"], () => this.turretRotation = 1, undefined, () => this.turretRotation = 0);
+        this.new_line();
         //this.key_triggered_button("(Un)freeze mouse look around", [" "], () => this.look_around_locked ^= 1, "#8B8885");
     }
-    getThrusAndRotation() {
+    getThrustAndRotation() {
         return {
             "thrust": this.thrust,
-            "rotation": this.rotation
+            "rotation": this.rotation,
+            "turretRotation": this.turretRotation
         }
     }
 
@@ -101,23 +106,33 @@ class TankControl extends Scene {
     }
 }
 
-export class MiniTankGame extends ShadowCastingScene{
+export class MiniTankGame extends ShadowCastingScene {
     constructor() {
-        
+
         super();
         this.tankTransform = Mat4.identity();
-
+        this.turretRotation = Mat4.identity();
+        this.modelAdjustment = Mat4.translation(0, 0.72, 0).times(Mat4.scale(2, 2, 2));
         this.shapes = {
             "tank": new Shape_From_File("assets/tank.obj"),
+            "tankWheels": new Shape_From_File("assets/wheels.obj"),
+            "tankBody": new Shape_From_File("assets/body.obj"),
+            "tankTurret": new Shape_From_File("assets/turret.obj"),
             "sphere": new Subdivision_Sphere(6),
             "cube": new Cube(),
         };
 
-        // For the teapot
-        this.stars = new Material(new Shadow_Textured_Phong_Shader(1), {
+        this.tank = new Material(new Shadow_Textured_Phong_Shader(1), {
             color: color(.5, .5, .5, 1),
             ambient: .4, diffusivity: .5, specularity: .5,
-            color_texture: new Texture("assets/stars.png"),
+            color_texture: new Texture("assets/Tank.png"),
+            light_depth_texture: null
+
+        });
+        this.wheel = new Material(new Shadow_Textured_Phong_Shader(1), {
+            color: color(.5, .5, .5, 1),
+            ambient: .4, diffusivity: .5, specularity: .5,
+            color_texture: new Texture("assets/Wheel.png"),
             light_depth_texture: null
 
         });
@@ -128,18 +143,17 @@ export class MiniTankGame extends ShadowCastingScene{
             light_depth_texture: null
 
         });
-        // For the floor or other plain objects
-        this.floor = new Material(new Shadow_Textured_Phong_Shader(1), {
-            color: color(1, 1, 1, 1), ambient: .3, diffusivity: 0.6, specularity: 0.4, smoothness: 64,
-            color_texture: null,
-            light_depth_texture: null
-        })
-        this.tank = new Material(new Color_Phong_Shader(), {color: hex_color("#002d4d")})
+        //this.tank = new Material(new Color_Phong_Shader(), { color: hex_color("#002d4d") })
         // For the first pass
         this.pure = new Material(new Color_Phong_Shader(), {
         })
     }
-    
+    initLightDepth() {
+        this.tank.light_depth_texture = this.light_depth_texture;
+        this.wheel.light_depth_texture = this.light_depth_texture;
+        this.grass.light_depth_texture = this.light_depth_texture;
+    }
+
     render(context, program_state, shadow_pass, dt = program_state.animation_delta_time / 1000) {
         if (!context.scratchpad.controls) {
             this.tankControl = new TankControl();
@@ -152,28 +166,65 @@ export class MiniTankGame extends ShadowCastingScene{
             )); // Locate the camera here
         }
         const t = program_state.animation_time;
-        const thrustSpeed = 1.5, rotationSpeed = 0.4;
-        let tr = this.tankControl.getThrusAndRotation();
+        const thrustSpeed = 1.5, rotationSpeed = 0.4, turretRotationSpeed = 0.3;
 
-        if(tr.thrust)
-            this.tankTransform = this.tankTransform.times(Mat4.translation(thrustSpeed * dt * tr.thrust,0,0));
-        if(tr.rotation)
-            this.tankTransform = this.tankTransform.times(Mat4.rotation(rotationSpeed * dt * tr.rotation,0,1,0));
         let model_trans_floor = Mat4.scale(30, 0.01, 30);
+        this.shapes.cube.draw(context, program_state, model_trans_floor, shadow_pass ? this.grass : this.pure);
+
+
+        let TR = this.tankControl.getThrustAndRotation();
+        if (TR.thrust)
+            this.tankTransform = this.tankTransform.times(Mat4.translation(0, 0, -thrustSpeed * dt * TR.thrust));
+        if (TR.rotation)
+            this.tankTransform = this.tankTransform.times(Mat4.rotation(rotationSpeed * dt * TR.rotation, 0, 1, 0));
+        if (TR.turretRotation)
+            this.turretRotation = this.turretRotation.times(Mat4.rotation(turretRotationSpeed * dt * TR.turretRotation, 0, 1, 0))
         let tank_transform = Mat4.identity();
-        
         // apply tank movement
         tank_transform = tank_transform.times(this.tankTransform);
-        tank_transform = tank_transform.times(Mat4.translation(0,0.5,0)).times(Mat4.scale(2,2,2));
-        this.shapes.cube.draw(context, program_state, model_trans_floor, shadow_pass ? this.grass : this.pure);
-        this.shapes.tank.draw(context, program_state, tank_transform, shadow_pass ? this.stars: this.pure);
-        
-        let tpmatrix = this.tankTransform.times(vec4(0,0,0,1));
+        // model adjustment
+        //tank_transform = tank_transform.times(Mat4.translation(0, 0.72, 0)).times(Mat4.scale(2, 2, 2));
 
-        let desired = Mat4.inverse(Mat4.translation(tpmatrix[0], tpmatrix[1] + 10, tpmatrix[2] + 25).times(Mat4.rotation(-Math.PI/8,1,0,0)));
+        // this.shapes.tank.draw(context, program_state, tank_transform, shadow_pass ? this.stars : this.pure);
+        this.shapes.tankTurret.draw(context, program_state,
+            tank_transform
+                .times(this.modelAdjustment)
+                .times(Mat4.scale(1.5, 1.5, 1.5))
+                .times(this.turretRotation)
+                .times(Mat4.translation(0, 0.5, -1.5)),
+            shadow_pass ? this.tank : this.pure);
+        this.shapes.tankBody.draw(context, program_state,
+            tank_transform
+                .times(this.modelAdjustment)
+                .times(Mat4.scale(2, 2, 2))
+                .times(Mat4.translation(0, 0.15, 0)),
+            shadow_pass ? this.tank : this.pure);
+        this.shapes.tankWheels.draw(context, program_state,
+            tank_transform
+                .times(this.modelAdjustment)
+                .times(Mat4.translation(-1, 0, 0)),
+            shadow_pass ? this.wheel : this.pure);
+        this.shapes.tankWheels.draw(context, program_state,
+            tank_transform
+                .times(this.modelAdjustment)
+                .times(Mat4.translation(1, 0, 0)),
+            shadow_pass ? this.wheel : this.pure);
+        // obtain final position from matrix
+        let tankPositionMatrix = this.tankTransform.times(vec4(0, 0, 0, 1));
+        // camera follow
+        let desired = Mat4.inverse(
+            Mat4.translation(
+                tankPositionMatrix[0],
+                tankPositionMatrix[1],
+                tankPositionMatrix[2]
+            )
+            .times(this.turretRotation)
+            .times(Mat4.translation(0,15,25))
+            .times(Mat4.rotation(-Math.PI/6,1,0,0)));
+        // smooth movement
         desired = desired.map((x, i) => Vector.from(program_state.camera_inverse[i]).mix(x, 0.03));
         program_state.set_camera(desired);
 
     }
-    
+
 }

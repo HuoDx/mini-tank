@@ -55,9 +55,8 @@ export class ShadowCastingScene extends Scene {
         this.lightDepthTexture = gl.createTexture();
         // Bind it to TinyGraphics
         this.light_depth_texture = new Buffered_Texture(this.lightDepthTexture);
-        this.stars.light_depth_texture = this.light_depth_texture
-        this.floor.light_depth_texture = this.light_depth_texture
-
+        // let child register light depth
+        this.initLightDepth();
         this.lightDepthTextureSize = LIGHT_DEPTH_TEX_SIZE;
         gl.bindTexture(gl.TEXTURE_2D, this.lightDepthTexture);
         gl.texImage2D(
