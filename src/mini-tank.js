@@ -113,7 +113,11 @@ class TankControl extends Scene {
 }
 
 export class MiniTankGame extends ShadowCastingScene {
+
+
+
     constructor() {
+
 
         super();
         this.tankTransform = Mat4.identity().times(Mat4.translation(0, 0, 15)); // spawning position
@@ -168,6 +172,7 @@ export class MiniTankGame extends ShadowCastingScene {
 
         this.tank_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(2., 1, 1))
         this.tank_shell_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(2., 1, 1))
+        this.enemyBulletBBox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(2., 1, 1))
         this.enemy_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(1, 1, 1))
         this.bbox_scale = Mat4.scale(2.8, 4, 4.2)
         this.is_tank_collide = false
@@ -175,6 +180,12 @@ export class MiniTankGame extends ShadowCastingScene {
 
         this.has_tank_shell = false
         this.has_enemy_shell = false
+
+        this.enemyBlood = 100;
+        this.playerBlood = 100;
+        this.stableCounter = 0;
+        this.fireCD = 5;
+        this.enemyFireCD = 5;
 
     }
     initLightDepth() {
@@ -189,7 +200,7 @@ export class MiniTankGame extends ShadowCastingScene {
     }
 
     // simple one, only control the turret based on the relative position
-    getNaiveEnemyControl() {
+    getAimingTurretRotation() {
         let tank_pos = this.tankTransform.times(vec4(0, 0, 0, 1));
         let enemy_pos = this.enemyTankTransform.times(vec4(0, 0, 0, 1));
         let relative_dir = tank_pos.minus(enemy_pos).to3()
@@ -209,15 +220,32 @@ export class MiniTankGame extends ShadowCastingScene {
         if (Math.abs(angle) > 0.03) {
             turretRotation = -Math.sign(angle)
         }
-
-        return {
-            "thrust": Math.random() * 0.8 - 0.4, // [-0.4 ,0.4]
-            "rotation": Math.random() * 2 - 1, // [-1, 1]
-            "turretRotation": turretRotation
-        }
+        return turretRotation;
     }
 
     render(context, program_state, shadow_pass, dt = program_state.animation_delta_time / 1000) {
+        const t = program_state.animation_time;
+        const thrustSpeed = 1.5, rotationSpeed = 0.4, turretRotationSpeed = 0.3;
+        const bulletFlyingSpeed = 1;
+        const EnemyStates = {
+            IDLE: 0, // staying
+            WANDERING: 1, // moving to some random direction
+            MOVING_TOWARDS_PLAYER: 2, // running towards player
+            ESCAPING: 3, // running away
+            AIMING: 4, // aiming to scare player, not firing
+            ATTACKING: 5, // aiming, but firing at the appropriate time
+        };
+
+
+        if (this.stableCounter < 128 && program_state.animation_delta_time < (1000 / 60.0)) {
+            this.stableCounter++;
+            if (this.stableCounter >= 128) {
+                removeLoadingPage();
+                this.gameBegin = true;
+                this.enemyLogicTimer = 0;
+                this.enemyState = EnemyStates.IDLE;
+            }
+        }
         if (!context.scratchpad.controls) {
             this.tankControl = new TankControl();
             this.children.push(context.scratchpad.controls = this.tankControl);
@@ -228,24 +256,71 @@ export class MiniTankGame extends ShadowCastingScene {
                 vec3(0, 1, 0)
             )); // Locate the camera here
         }
-        const t = program_state.animation_time;
-        const thrustSpeed = 1.5, rotationSpeed = 0.4, turretRotationSpeed = 0.3;
-        const bulletFlyingSpeed = 1;
 
         let model_trans_floor = Mat4.scale(30, 0.01, 60);
         this.shapes.cube.draw(context, program_state, model_trans_floor, shadow_pass ? this.grass : this.pure);
 
         // playing input handling
         let TR = this.tankControl.getThrustAndRotation();
-        // enemy input handling
-        if (!this.enemyLogicTimer) {
-            this.enemyLogicTimer = program_state.animation_time;
-            this.enemyAction = this.getNaiveEnemyControl();
-        } else if (program_state.animation_time - this.enemyLogicTimer > 3000) {
-            this.enemyLogicTimer = program_state.animation_time;
-            this.enemyAction = this.getNaiveEnemyControl();
+
+        // // enemy input handling
+        // if (!this.enemyLogicTimer) {
+        //     this.enemyLogicTimer = program_state.animation_time;
+        //     this.enemyAction = this.getNaiveEnemyControl();
+        // } else if (program_state.animation_time - this.enemyLogicTimer > 2500) { // update enemy action every 2.5s
+        //     this.enemyLogicTimer = program_state.animation_time;
+        //     this.enemyAction = this.getNaiveEnemyControl();
+        // }
+        // let enemy_TR = this.enemyAction;
+        let enemy_TR = {};
+        if (this.gameBegin) {
+            // enemyAI, using simple FSM
+            if (program_state.animation_time - this.enemyLogicTimer > 2500) {
+                //update enemy state
+                this.enemyLogicTimer = program_state.animation_time;
+                // LaTeX: \frac{1}{2}\tanh\left(\left(\frac{1-2x}{1}\right)\pi\right)+0.5
+                // 血量越少，人越急，急急急急急
+                this.enemyJi_ness = 0.5 * Math.tanh(((100 - 2 * this.enemyBlood) / 100.0) * Math.PI) + 0.5 //敌人有多急, from 0 - 1
+                this.enemyState = parseInt(Math.random() * 6);
+                if (this.enemyState == EnemyStates.AIMING && Math.random() <= 0.3)
+                    this.enemyState = EnemyStates.ATTACKING;
+                else if (Math.random() < this.enemyJi_ness)
+                    this.enemyState = EnemyStates.ATTACKING;
+                if (this.enemyState === EnemyStates.WANDERING)
+                    this.wanderingTR = {
+                        "thrust": Math.random() * 0.8 - 0.4, // [-0.4 ,0.4]
+                        "rotation": Math.random() * 2 - 1,
+                    };
+            }
+
+            switch (this.enemyState) {
+                case EnemyStates.IDLE: // doing nothing
+                    break;
+                case EnemyStates.WANDERING:
+                    enemy_TR = this.wanderingTR;
+                    break;
+                case EnemyStates.MOVING_TOWARDS_PLAYER:
+                    enemy_TR.rotation = this.getAimingTurretRotation();
+                    enemy_TR.thrust = 1;
+                    break;
+                case EnemyStates.ESCAPING:
+                    enemy_TR.rotation = -this.getAimingTurretRotation();
+                    enemy_TR.thrust = this.enemyJi_ness;
+                    break;
+                case EnemyStates.AIMING:
+                    enemy_TR.turretRotation = this.getAimingTurretRotation();
+
+                case EnemyStates.ATTACKING:
+                    enemy_TR.turretRotation = this.getAimingTurretRotation();
+                    if (Math.abs(enemy_TR.turretRotation) <= 0.3 && Math.random() < 0.2 + this.enemyJi_ness) {
+                        enemy_TR.fire = true;
+                        this.enemyLogicTimer = 0;
+                    }
+                    break;
+            }
         }
-        let enemy_TR = this.enemyAction;
+
+        if(!this.gameBegin) return;
 
         if (TR.rotation)
             this.tankTransform = this.tankTransform.times(Mat4.rotation(rotationSpeed * dt * TR.rotation, 0, 1, 0));
@@ -265,14 +340,27 @@ export class MiniTankGame extends ShadowCastingScene {
 
         if (enemy_TR.turretRotation)
             this.enemyTurretRotation = this.enemyTurretRotation.times(Mat4.rotation(turretRotationSpeed * dt * enemy_TR.turretRotation, 0, 1, 0))
-        if (TR.fire && !this.has_tank_shell) {
+        if (TR.fire && !this.has_tank_shell && this.fireCD <= 0) {
             this.has_tank_shell = true;
+            this.fireCD = 5;
             this.tank_shell_transform = this.tankTransform
                 .times(Mat4.translation(0, 0.0, -1.0))
                 .times(this.turretRotation)
                 .times(Mat4.translation(0, 2.5, -7.5))
                 .times(Mat4.scale(0.3, 0.3, 0.3));
         }
+        if (enemy_TR.fire && !this.enemyBulletFlying && this.enemyFireCD <= 0) {
+            this.enemyFireCD = 5;
+            this.enemyBulletFlying = true;
+            this.enemyBulletTransform = this.enemyTankTransform
+                .times(Mat4.translation(0, 0.0, -1.0))
+                .times(this.enemyTurretRotation)
+                .times(Mat4.translation(0, 2.5, -7.5))
+                .times(Mat4.scale(0.3, 0.3, 0.3));
+        }
+        this.fireCD -= dt;
+        this.enemyFireCD -= dt;
+        setCD(this.fireCD);
         // then 
         // collision detection 
         this.tank_bbox = this.tank_bbox.emplace(this.tankTransform.times(this.bbox_scale), vec3(0, 0, 0), 0)
@@ -300,12 +388,40 @@ export class MiniTankGame extends ShadowCastingScene {
             this.tank_shell_bbox = this.tank_shell_bbox.emplace(this.tank_shell_transform.times(Mat4.scale(5, 5, 5)), vec3(0, 0, 0), 0)
             this.tank_shell_bbox.inverse = Mat4.inverse(this.tank_shell_bbox.drawn_location);
             this.is_shell_collide = this.tank_shell_bbox.check_if_colliding(this.enemy_bbox, this.collider)
-            console.log(this.is_shell_collide)
+            // console.log(this.is_shell_collide)
             if (this.is_shell_collide) {
                 this.has_tank_shell = false
+                if (this.enemyBlood >= 10) this.enemyBlood -= 10;
+                this.enemyFireCD = this.enemyFireCD > 0 ? this.enemyFireCD + 0.5 : 0.5;
+                setEnemyBlood(this.enemyBlood);
+                if (this.enemyBlood <= 0) {
+                    this.gameBegin = false;
+                    showWinPage();
+                }
             }
             else {
                 this.tank_shell_transform = this.tank_shell_transform.times(Mat4.translation(0, 0, -1 * bulletFlyingSpeed))
+            }
+        }
+        if (this.enemyBulletFlying) {
+            let bulletPosition = this.enemyBulletTransform.times(vec4(0, 0, 0, 1));
+            if (!this.inMap(bulletPosition)) this.enemyBulletFlying = false;
+
+            this.enemyBulletBBox = this.enemyBulletBBox.emplace(this.enemyBulletTransform.times(Mat4.scale(5, 5, 5)), vec3(0, 0, 0), 0)
+            this.enemyBulletBBox.inverse = Mat4.inverse(this.enemyBulletBBox.drawn_location);
+            if (this.enemyBulletBBox.check_if_colliding(this.tank_bbox, this.collider)) {
+                this.enemyBulletFlying = false;
+                if (this.playerBlood >= 10) this.playerBlood -= 10;
+                this.fireCD = this.fireCD > 0 ? this.fireCD + 5 : 5;
+                setBlood(this.playerBlood);
+                if (this.playerBlood <= 0) {
+                    this.gameBegin = false;
+                    showLoosePage();
+                }
+            }
+            else {
+                this.enemyBulletTransform = this.enemyBulletTransform.times(Mat4.translation(0, 0, -1 * bulletFlyingSpeed));
+
             }
         }
 
@@ -373,6 +489,11 @@ export class MiniTankGame extends ShadowCastingScene {
                 shadow_pass ? this.tank : this.pure);
         }
 
+        if (this.enemyBulletFlying) {
+            this.shapes.sphere.draw(context, program_state,
+                this.enemyBulletTransform,
+                shadow_pass ? this.tank : this.pure);
+        }
         // camera follow
         let desired = Mat4.inverse(
             this.tankTransform
@@ -400,7 +521,6 @@ export class MiniTankGame extends ShadowCastingScene {
         //             this.tank_shell_transform,
         //             shadow_pass ? this.enemy_tank : this.pure);
         // }
-
     }
 
 }

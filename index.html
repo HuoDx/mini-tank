@@ -11,7 +11,68 @@
 <body style="background: White">
 <!-- Begin typing your web page here. -->
 <!-- The following code embeds a WebGL canvas panel, loads certain scene(s), and displays panel(s) of their controls.-->
-<div class="canvas-widget" id="main-canvas"></div>
+<div class="canvas-widget" id="main-canvas">
+    <div id="ui-overlay" style="position: fixed; width: 1080px; height: 600px;">
+        <script>
+            function showWinPage() {
+                document.querySelector('#game-win').style.display = 'block';
+                document.querySelector('#game-loose').style.display = 'none';
+                document.querySelector('#loading').style.display = 'none';
+            }
+            function showLoosePage() {
+                document.querySelector('#game-loose').style.display = 'block';
+                document.querySelector('#game-win').style.display = 'none';
+                document.querySelector('#loading').style.display = 'none';
+            }
+            function removeLoadingPage() {
+                document.querySelector('#game-win').style.display = 'none';
+                document.querySelector('#game-loose').style.display = 'none';
+                document.querySelector('#loading').style.display = 'none';
+            }
+        </script>
+        <div id="loading" >
+            <div style="position: absolute; z-index: 1;width: 100%; height: 100%; display: flex; flex-direction: column; background-color: black; align-items: center; justify-content: center;">
+                <h1 style="color: yellow; font-size: 64px;">Loading...</h1>
+            </div>
+        </div>
+        <div id="game-win" style="display: none;">
+            <div style="position: absolute; z-index: 1;width: 100%; height: 100%; display: flex; flex-direction: column; background-color: green; align-items: center; justify-content: center;">
+                <h1 style="color: red; font-size: 64px;">YOU WIN!</h1>
+                <button style="border: none; border-radius: 8px; padding: 16px; font-size: xx-large;" onclick="location.reload()">RESTART</button>
+            </div>
+        </div>
+        <div id="game-loose" style="display: none;">
+            <div style="position: absolute; z-index: 1;width: 100%; height: 100%; display: flex; flex-direction: column; background-color: red; align-items: center; justify-content: center;">
+                <h1 style="color: green; font-size: 64px;">GAME OVER :/</h1>
+                <button style="border: none; border-radius: 8px; padding: 16px; font-size: xx-large;" onclick="location.reload()">RESTART</button>
+            </div>
+        </div>
+        <div id="bars">
+            <div id="hp-background" style="position: absolute; left: 16px; top: 16px; width: 320px; height: 64px; background-color: gray; border-radius: 8px;"> 
+                <div id="hp-blood" style="position: relative; left: 4px; top: 4px; width: 312px; height: 56px; background-color: greenyellow; border-radius: 8px;">
+                    <div id="cd" style="position: relative; bottom: 8px; width: 312px; height: 8px; background-color: blue; border-radius: 8px;"> </div>
+                </div>
+                
+            </div>
+            <div id="enemy-hp-background" style="position: absolute; right: 16px; top: 16px; width: 320px; height: 64px; background-color: gray; border-radius: 8px;"> 
+                <div id="enemy-hp-blood" style="position: relative; left: 4px; top: 4px; width: 312px; height: 56px; background-color: red; border-radius: 8px;"> </div>
+            </div>
+            <script>
+                function setCD(cd) {
+                    if(cd > 5.0) cd = 5;
+                    document.getElementById('cd').style.width = `${parseInt((cd/5.0) * 312)}px`;
+                }
+                function setBlood(hp) {
+                    document.getElementById('hp-blood').style.width = `${parseInt((hp/100.0) * 312)}px`;
+                }
+                function setEnemyBlood(hp) {
+                    document.getElementById('enemy-hp-blood').style.width = `${parseInt((hp/100.0) * 312)}px`;
+                }
+            </script>
+        </div>
+        
+    </div>
+</div>
 <script type=module>
     // ********************* THE ENTRY POINT OF YOUR WHOLE PROGRAM STARTS HERE *********************
     // Indicate which element on the page you want the Canvas_Widget to replace with a 3D WebGL area:
