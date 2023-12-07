@@ -97,12 +97,14 @@ class TankControl extends Scene {
         //this.key_triggered_button("(Un)freeze mouse look around", [" "], () => this.look_around_locked ^= 1, "#8B8885");
     }
     getThrustAndRotation() {
-        return {
+        let data = {
             "thrust": this.thrust,
             "rotation": this.rotation,
             "fire": this.fire,
             "turretRotation": this.turretRotation
-        }
+        };
+        this.fire = 0; // resets back after read
+        return data
     }
 
     display(context, graphics_state) {
@@ -114,9 +116,9 @@ export class MiniTankGame extends ShadowCastingScene {
     constructor() {
 
         super();
-        this.tankTransform = Mat4.identity().times(Mat4.translation(0, 0 , 15)); // spawning position
+        this.tankTransform = Mat4.identity().times(Mat4.translation(0, 0, 15)); // spawning position
         this.turretRotation = Mat4.identity();
-        this.enemyTankTransform = Mat4.identity().times(Mat4.translation(0, 0 , -15).times(Mat4.rotation(Math.PI, 0, 1, 0))); // spawning position
+        this.enemyTankTransform = Mat4.identity().times(Mat4.translation(0, 0, -15).times(Mat4.rotation(Math.PI, 0, 1, 0))); // spawning position
         this.enemyTurretRotation = Mat4.identity();
         this.modelAdjustment = Mat4.translation(0, 0.72, 0).times(Mat4.scale(2, 2, 2));
         this.shapes = {
@@ -162,17 +164,17 @@ export class MiniTankGame extends ShadowCastingScene {
         // For the first pass
         this.pure = new Material(new Color_Phong_Shader(), {
         })
-        this.collider = {intersect_test: Body.intersect_sphere, points: new defs.Subdivision_Sphere(2), leeway: .3}
-  
-        this.tank_bbox = new Body(this.shapes.cube, vec3(1,1,1), vec3(2., 1, 1))
-        this.tank_shell_bbox = new Body(this.shapes.cube, vec3(1,1,1), vec3(2., 1, 1))
-        this.enemy_bbox = new Body(this.shapes.cube, vec3(1,1,1), vec3(1, 1, 1))
+        this.collider = { intersect_test: Body.intersect_sphere, points: new defs.Subdivision_Sphere(2), leeway: .3 }
+
+        this.tank_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(2., 1, 1))
+        this.tank_shell_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(2., 1, 1))
+        this.enemy_bbox = new Body(this.shapes.cube, vec3(1, 1, 1), vec3(1, 1, 1))
         this.bbox_scale = Mat4.scale(2.8, 4, 4.2)
         this.is_tank_collide = false
         this.is_shell_collide = false
 
         this.has_tank_shell = false
-        this.has_enemy_shell = false 
+        this.has_enemy_shell = false
 
     }
     initLightDepth() {
@@ -180,32 +182,37 @@ export class MiniTankGame extends ShadowCastingScene {
         this.wheel.light_depth_texture = this.light_depth_texture;
         this.grass.light_depth_texture = this.light_depth_texture;
     }
-    
+
+    inMap(position) {
+        return !(position[0] <= -26 || position[0] >= 26 ||
+            position[2] <= -56 || position[2] >= 56);
+    }
+
     // simple one, only control the turret based on the relative position
-    getNaiveEnemyControl(){
+    getNaiveEnemyControl() {
         let tank_pos = this.tankTransform.times(vec4(0, 0, 0, 1));
         let enemy_pos = this.enemyTankTransform.times(vec4(0, 0, 0, 1));
         let relative_dir = tank_pos.minus(enemy_pos).to3()
         let enemey_turrent_transform = this.enemyTankTransform
-                .times(this.modelAdjustment)
-                .times(Mat4.scale(1.5, 1.5, 1.5))
-                .times(Mat4.translation(0, 0.0, -0.3))
-                .times(this.enemyTurretRotation)
-                .times(Mat4.translation(0, 0.5, -1.5))
+            .times(this.modelAdjustment)
+            .times(Mat4.scale(1.5, 1.5, 1.5))
+            .times(Mat4.translation(0, 0.0, -0.3))
+            .times(this.enemyTurretRotation)
+            .times(Mat4.translation(0, 0.5, -1.5))
         let turrent_a = enemey_turrent_transform.times(vec4(0, 0, 0, 1))
         let turrent_b = enemey_turrent_transform.times(vec4(0, 0, -1, 1))
         let turrent_dir = turrent_b.minus(turrent_a).to3()
         let angle = Math.acos(relative_dir.dot(turrent_dir) / (relative_dir.norm() * turrent_dir.norm()))
         angle = angle * Math.sign(relative_dir.cross(turrent_dir)[1])
-        
+
         let turretRotation = 0
-        if(Math.abs(angle) > 0.03){
+        if (Math.abs(angle) > 0.03) {
             turretRotation = -Math.sign(angle)
         }
-        
+
         return {
-            "thrust": Math.random()*0.8 - 0.4, // [-0.4 ,0.4]
-            "rotation": Math.random()*2 - 1, // [-1, 1]
+            "thrust": Math.random() * 0.8 - 0.4, // [-0.4 ,0.4]
+            "rotation": Math.random() * 2 - 1, // [-1, 1]
             "turretRotation": turretRotation
         }
     }
@@ -223,57 +230,86 @@ export class MiniTankGame extends ShadowCastingScene {
         }
         const t = program_state.animation_time;
         const thrustSpeed = 1.5, rotationSpeed = 0.4, turretRotationSpeed = 0.3;
+        const bulletFlyingSpeed = 1;
 
         let model_trans_floor = Mat4.scale(30, 0.01, 60);
         this.shapes.cube.draw(context, program_state, model_trans_floor, shadow_pass ? this.grass : this.pure);
-        
 
+        // playing input handling
         let TR = this.tankControl.getThrustAndRotation();
-        let enemy_TR = this.getNaiveEnemyControl();
+        // enemy input handling
+        if (!this.enemyLogicTimer) {
+            this.enemyLogicTimer = program_state.animation_time;
+            this.enemyAction = this.getNaiveEnemyControl();
+        } else if (program_state.animation_time - this.enemyLogicTimer > 3000) {
+            this.enemyLogicTimer = program_state.animation_time;
+            this.enemyAction = this.getNaiveEnemyControl();
+        }
+        let enemy_TR = this.enemyAction;
 
+        if (TR.rotation)
+            this.tankTransform = this.tankTransform.times(Mat4.rotation(rotationSpeed * dt * TR.rotation, 0, 1, 0));
+        if (TR.turretRotation)
+            this.turretRotation = this.turretRotation.times(Mat4.rotation(turretRotationSpeed * dt * TR.turretRotation, 0, 1, 0))
         let old_tank_transform = this.tankTransform
         let old_enemy_tank_transform = this.enemyTankTransform
 
+        // implement movement
         if (TR.thrust)
             this.tankTransform = this.tankTransform.times(Mat4.translation(0, 0, -thrustSpeed * dt * TR.thrust));
-        if (TR.rotation)
-            this.tankTransform = this.tankTransform.times(Mat4.rotation(rotationSpeed * dt * TR.rotation, 0, 1, 0));
-       
+
         if (enemy_TR.thrust)
             this.enemyTankTransform = this.enemyTankTransform.times(Mat4.translation(0, 0, -thrustSpeed * dt * enemy_TR.thrust));
         if (enemy_TR.rotation)
             this.enemyTankTransform = this.enemyTankTransform.times(Mat4.rotation(rotationSpeed * dt * enemy_TR.rotation, 0, 1, 0));
-      
-        
-        this.tank_bbox = this.tank_bbox.emplace( this.tankTransform.times(this.bbox_scale), vec3(0,0,0), 0)
-        this.tank_bbox.inverse = Mat4.inverse(this.tank_bbox.drawn_location);
-        this.enemy_bbox = this.enemy_bbox.emplace(this.enemyTankTransform.times(this.bbox_scale), vec3(0,0,0), 0)
 
-        
-        this.is_tank_collide = this.tank_bbox.check_if_colliding(this.enemy_bbox, this.collider)
-        if (this.is_tank_collide){
-           this.tankTransform = old_tank_transform
-           this.enemyTankTransform = old_enemy_tank_transform
+        if (enemy_TR.turretRotation)
+            this.enemyTurretRotation = this.enemyTurretRotation.times(Mat4.rotation(turretRotationSpeed * dt * enemy_TR.turretRotation, 0, 1, 0))
+        if (TR.fire && !this.has_tank_shell) {
+            this.has_tank_shell = true;
+            this.tank_shell_transform = this.tankTransform
+                .times(Mat4.translation(0, 0.0, -1.0))
+                .times(this.turretRotation)
+                .times(Mat4.translation(0, 2.5, -7.5))
+                .times(Mat4.scale(0.3, 0.3, 0.3));
         }
+        // then 
+        // collision detection 
+        this.tank_bbox = this.tank_bbox.emplace(this.tankTransform.times(this.bbox_scale), vec3(0, 0, 0), 0)
+        this.tank_bbox.inverse = Mat4.inverse(this.tank_bbox.drawn_location);
+        this.enemy_bbox = this.enemy_bbox.emplace(this.enemyTankTransform.times(this.bbox_scale), vec3(0, 0, 0), 0)
 
-        if (this.has_tank_shell){
-            this.tank_shell_bbox = this.tank_shell_bbox.emplace(this.tank_shell_transform.times(Mat4.scale(5,5,5)), vec3(0,0,0), 0)
+
+        this.is_tank_collide = this.tank_bbox.check_if_colliding(this.enemy_bbox, this.collider)
+        if (this.is_tank_collide) {
+            this.tankTransform = old_tank_transform
+            this.enemyTankTransform = old_enemy_tank_transform
+        }
+        // map boundary detection
+        let playerTankPosition = this.tankTransform.times(vec4(0, 0, 0, 1));
+        let enemyTankPosition = this.enemyTankTransform.times(vec4(0, 0, 0, 1));
+        if (!this.inMap(playerTankPosition)) {
+            this.tankTransform = old_tank_transform;
+        }
+        if (!this.inMap(enemyTankPosition))
+            this.enemyTankTransform = old_enemy_tank_transform;
+
+        if (this.has_tank_shell) {
+            let bulletPosition = this.tank_shell_transform.times(vec4(0, 0, 0, 1));
+            if (!this.inMap(bulletPosition)) this.has_tank_shell = false;
+            this.tank_shell_bbox = this.tank_shell_bbox.emplace(this.tank_shell_transform.times(Mat4.scale(5, 5, 5)), vec3(0, 0, 0), 0)
             this.tank_shell_bbox.inverse = Mat4.inverse(this.tank_shell_bbox.drawn_location);
             this.is_shell_collide = this.tank_shell_bbox.check_if_colliding(this.enemy_bbox, this.collider)
             console.log(this.is_shell_collide)
-            if (this.is_shell_collide){
+            if (this.is_shell_collide) {
                 this.has_tank_shell = false
             }
-            else{
-                this.tank_shell_transform = this.tank_shell_transform.times(Mat4.translation(0,0,-0.1))
+            else {
+                this.tank_shell_transform = this.tank_shell_transform.times(Mat4.translation(0, 0, -1 * bulletFlyingSpeed))
             }
         }
 
-        if (TR.turretRotation)
-        this.turretRotation = this.turretRotation.times(Mat4.rotation(turretRotationSpeed * dt * TR.turretRotation, 0, 1, 0))
-        if (enemy_TR.turretRotation)
-        this.enemyTurretRotation = this.enemyTurretRotation.times(Mat4.rotation(turretRotationSpeed * dt * enemy_TR.turretRotation, 0, 1, 0))
-    
+
 
         // model adjustment
         //tank_transform = tank_transform.times(Mat4.translation(0, 0.72, 0)).times(Mat4.scale(2, 2, 2));
@@ -303,29 +339,6 @@ export class MiniTankGame extends ShadowCastingScene {
                 .times(this.modelAdjustment)
                 .times(Mat4.translation(1, 0, 0)),
             shadow_pass ? this.wheel : this.pure);
-        if (TR.fire){
-            this.has_tank_shell = true;
-            this.tank_shell_transform =  this.tankTransform
-            .times(Mat4.translation(0, 0.0, -1.0))
-            .times(this.turretRotation)
-            .times(Mat4.translation(0, 2.5, -7.5))
-            .times(Mat4.scale(0.3, 0.3, 0.3));
-        }
-        if (this.has_tank_shell){
-            this.shapes.sphere.draw(context, program_state,
-                this.tank_shell_transform,
-                shadow_pass ? this.tank : this.pure);
-        }
-        // camera follow
-        let desired = Mat4.inverse(
-            this.tankTransform
-            .times(this.turretRotation)
-            .times(Mat4.translation(0,15,25))
-            .times(Mat4.rotation(-Math.PI/6,1,0,0)));
-        // smooth movement
-        desired = desired.map((x, i) => Vector.from(program_state.camera_inverse[i]).mix(x, 0.03));
-        program_state.set_camera(desired);
-
 
         // draw the enemy tank
         this.shapes.tankTurret.draw(context, program_state,
@@ -347,15 +360,31 @@ export class MiniTankGame extends ShadowCastingScene {
                 .times(this.modelAdjustment)
                 .times(Mat4.translation(-1, 0, 0)),
             shadow_pass ? this.wheel : this.pure);
-
-
-       
         this.shapes.tankWheels.draw(context, program_state,
             this.enemyTankTransform
                 .times(this.modelAdjustment)
                 .times(Mat4.translation(1, 0, 0)),
             shadow_pass ? this.wheel : this.pure);
-       
+
+        // draw bullet
+        if (this.has_tank_shell) {
+            this.shapes.sphere.draw(context, program_state,
+                this.tank_shell_transform,
+                shadow_pass ? this.tank : this.pure);
+        }
+
+        // camera follow
+        let desired = Mat4.inverse(
+            this.tankTransform
+                .times(this.turretRotation)
+                .times(Mat4.translation(0, 15, 25))
+                .times(Mat4.rotation(-Math.PI / 6, 1, 0, 0)));
+
+        // smooth camera movement
+        desired = desired.map((x, i) => Vector.from(program_state.camera_inverse[i]).mix(x, 0.03));
+        program_state.set_camera(desired);
+
+
         // draw bbox for debug
 
         // this.shapes.cube.draw(context, program_state,
