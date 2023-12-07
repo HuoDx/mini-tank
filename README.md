@@ -44,8 +44,8 @@ In this project, we make a simple version of the online game of *World of Tanks*
 **Tank Model:** 
 We use Blender to create a realistic tank model.
 
-**Collision Detection:** We follow the collision detection demo to detection collisions between the player tank and the enemy tank as well the between the shells and the tanks.
+**Collision Detection:** We follow the collision detection demo to detection collisions between the player tank and the enemy tank as well as between the shells and the tanks.
 
 **Shadowing:** We follow the shadow demo to add a light source to add shadows and give the scene a more layered look.
 
-**Enemy AI** We use a finite state machine to model the enemy's AI which plays more aggressively with less hit points.
+**Enemy AI:** We use a finite state machine to model the enemy's AI which plays more aggressively with less hit points.
